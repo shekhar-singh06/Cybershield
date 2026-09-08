@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Parkflow - Smart Parking Management System</title>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --card-bg: #1e293b;
+            --accent: #38bdf8;
+            --text: #f8fafc;
+            --free: #22c55e;
+            --occupied: #ef4444;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text);
+            margin: 0;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1100px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        header h1 {
+            color: var(--accent);
+            margin-bottom: 5px;
+        }
+
+        .dashboard {
+            display: grid;
+            grid-template-columns: 1fr 2fr;
+            gap: 20px;
+        }
+
+        .card {
+            background: var(--card-bg);
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-size: 0.9em;
+        }
+
+        input, select, button {
+            width: 100%;
+            padding: 10px;
+            border-radius: 5px;
+            border: 1px solid #334155;
+            background: #0f172a;
+            color: var(--text);
+            box-sizing: border-box;
+        }
+
+        button {
+            background: var(--accent);
+            color: #0f172a;
+            font-weight: bold;
+            cursor: pointer;
+            border: none;
+            margin-top: 10px;
+            transition: 0.2s;
+        }
+
+        button:hover {
+            opacity: 0.9;
+        }
+
+        .parking-grid {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .slot {
+            padding: 15px 5px;
+            text-align: center;
+            border-radius: 6px;
+            font-weight: bold;
+            font-size: 0.85em;
+        }
+
+        .slot.free {
+            background-color: rgba(34, 197, 94, 0.2);
+            border: 2px solid var(--free);
+            color: var(--free);
+        }
+
+        .slot.occupied {
+            background-color: rgba(239, 68, 68, 0.2);
+            border: 2px solid var(--occupied);
+            color: var(--occupied);
+        }
+
+        .list-box {
+            background: #0f172a;
+            border: 1px solid #334155;
+            border-radius: 5px;
+            padding: 10px;
+            max-height: 120px;
+            overflow-y: auto;
+            font-size: 0.85em;
+        }
+
+        .list-item {
+            padding: 5px 0;
+            border-bottom: 1px solid #1e293b;
+        }
+
+        .stats-bar {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 15px;
+            background: #0f172a;
+            padding: 10px;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <h1>Parkflow</h1>
+        <p>Smart Parking Management System (Data Structure Engine)</p>
+    </header>
+
+    <div class="dashboard">
+        <!-- Controls Panel -->
+        <div class="card">
+            <h3>Vehicle Control</h3>
+            <div class="form-group">
+                <label for="plateNum">Vehicle License Plate</label>
+                <input type="text" id="plateNum" placeholder="e.g., UK07AB1234">
+            </div>
+            
+            <div class="form-group">
+                <label for="parkType">Type</label>
+                <select id="parkType">
+                    <option value="regular">Regular Slot Allocation</option>
+                    <option value="valet">Express Valet Lane (Stack)</option>
+                </select>
+            </div>
+
+            <button onclick="entryVehicle()">Vehicle Entry</button>
+            <button onclick="exitVehicle()" style="background-color: #f43f5e; color: white;">Vehicle Exit</button>
+
+            <hr style="border-color: #334155; margin: 20px 0;">
+
+            <h4>Waiting Queue (FIFO)</h4>
+            <div id="queueList" class="list-box">Empty</div>
+
+            <h4>Valet Stack (LIFO)</h4>
+            <div id="stackList" class="list-box">Empty</div>
+        </div>
+
+        <!-- Visual Layout Panel -->
+        <div class="card">
+            <div class="stats-bar">
+                <div>Total Slots: <b id="totalCount">10</b></div>
+                <div>Occupied: <b id="occCount" style="color: var(--occupied)">0</b></div>
+                <div>Free: <b id="freeCount" style="color: var(--free)">10</b></div>
+            </div>
+
+            <h3>Parking Matrix Display (Array Layout)</h3>
+            <div id="parkingGrid" class="parking-grid"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // --- IN-MEMORY DATA STRUCTURES ---
+    const TOTAL_SLOTS = 10;
+    
+    // Array Matrix: Slot status (null = Free, Object = Occupied)
+    let slots = new Array(TOTAL_SLOTS).fill(null); 
+    
+    // Queue (FIFO): Vehicles waiting when full
+    let waitingQueue = []; 
+    
+    // Stack (LIFO): Express Valet Lane
+    let valetStack = []; 
+
+    // Render Initial Grid UI
+    function renderGrid() {
+        const grid = document.getElementById('parkingGrid');
+        grid.innerHTML = '';
+        
+        let occupied = 0;
+
+        slots.forEach((slot, index) => {
+            const div = document.createElement('div');
+            if (slot === null) {
+                div.className = 'slot free';
+                div.innerHTML = `Slot ${index + 1}<br><small>FREE</small>`;
+            } else {
+                div.className = 'slot occupied';
+                div.innerHTML = `Slot ${index + 1}<br><small>${slot.plate}</small>`;
+                occupied++;
+            }
+            grid.appendChild(div);
+        });
+
+        // Update stats
+        document.getElementById('totalCount').innerText = TOTAL_SLOTS;
+        document.getElementById('occCount').innerText = occupied;
+        document.getElementById('freeCount').innerText = TOTAL_SLOTS - occupied;
+
+        // Update Lists UI
+        renderLists();
+    }
+
+    function renderLists() {
+        // Render Queue (FIFO)
+        const queueDiv = document.getElementById('queueList');
+        if (waitingQueue.length === 0) {
+            queueDiv.innerHTML = '<span style="color: #64748b">Queue is empty</span>';
+        } else {
+            queueDiv.innerHTML = waitingQueue.map((v, i) => `<div class="list-item">${i+1}. ${v.plate}</div>`).join('');
+        }
+
+        // Render Stack (LIFO)
+        const stackDiv = document.getElementById('stackList');
+        if (valetStack.length === 0) {
+            stackDiv.innerHTML = '<span style="color: #64748b">Valet stack is empty</span>';
+        } else {
+            stackDiv.innerHTML = valetStack.slice().reverse().map((v, i) => `<div class="list-item">TOP ${i+1}: ${v.plate}</div>`).join('');
+        }
+    }
+
+    // Handle Entry Logic
+    function entryVehicle() {
+        const plate = document.getElementById('plateNum').value.trim().toUpperCase();
+        const type = document.getElementById('parkType').value;
+
+        if (!plate) {
+            alert('Please enter a valid vehicle plate number.');
+            return;
+        }
+
+        if (type === 'valet') {
+            // Push to Stack
+            valetStack.push({ plate, time: new Date().toLocaleTimeString() });
+            alert(`Vehicle ${plate} added to Valet Stack.`);
+        } else {
+            // Check Array for Free Slot
+            let allocatedIndex = slots.findIndex(s => s === null);
+
+            if (allocatedIndex !== -1) {
+                // Array Array Allocation
+                slots[allocatedIndex] = { plate, time: new Date().toLocaleTimeString() };
+            } else {
+                // Lot Full -> Enqueue
+                waitingQueue.push({ plate, time: new Date().toLocaleTimeString() });
+                alert(`Parking Full! Vehicle ${plate} placed in Waiting Queue.`);
+            }
+        }
+
+        document.getElementById('plateNum').value = '';
+        renderGrid();
+    }
+
+    // Handle Exit Logic
+    function exitVehicle() {
+        const plate = document.getElementById('plateNum').value.trim().toUpperCase();
+        const type = document.getElementById('parkType').value;
+
+        if (type === 'valet') {
+            if (valetStack.length === 0) {
+                alert('Valet stack is empty.');
+                return;
+            }
+            // Pop from Stack
+            const poppedVehicle = valetStack.pop();
+            alert(`Valet Vehicle ${poppedVehicle.plate} removed from Stack (LIFO).`);
+        } else {
+            if (!plate) {
+                alert('Enter plate number to clear slot.');
+                return;
+            }
+
+            let foundIndex = slots.findIndex(s => s && s.plate === plate);
+
+            if (foundIndex !== -1) {
+                slots[foundIndex] = null; // Free Slot
+
+                // Check FIFO Queue for next waiting vehicle
+                if (waitingQueue.length > 0) {
+                    const nextVehicle = waitingQueue.shift(); // Dequeue
+                    slots[foundIndex] = nextVehicle;
+                    alert(`Slot ${foundIndex + 1} freed and re-assigned to Queue vehicle: ${nextVehicle.plate}`);
+                } else {
+                    alert(`Vehicle ${plate} exited. Slot ${foundIndex + 1} is now Free.`);
+                }
+            } else {
+                alert('Vehicle not found in allocated slots.');
+            }
+        }
+
+        document.getElementById('plateNum').value = '';
+        renderGrid();
+    }
+
+    // Initial Load
+    renderGrid();
+</script>
+
+</body>
+</html>
